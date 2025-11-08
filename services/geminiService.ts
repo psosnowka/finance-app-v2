@@ -66,10 +66,47 @@ export const categorizeTransactions = async (transactions: Transaction[]): Promi
         }
 
         const data = await ollamaResponse.json();
-        const categorizedItems = JSON.parse(data.response) as { description: string; category: string }[];
+        let responseText = data.response.trim();
+
+        // 1. Clean the response string from markdown
+        const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+        const match = responseText.match(jsonRegex);
+        if (match && match[1]) {
+            responseText = match[1];
+        }
+
+        // 2. Parse the string
+        let parsedJson;
+        try {
+            parsedJson = JSON.parse(responseText);
+        } catch (e) {
+            console.error("Failed to parse JSON from Ollama response.", { response: responseText, error: e });
+            throw new Error("Model AI zwrócił nieprawidłowy format JSON. Sprawdź logi serwera Ollama.");
+        }
+        
+        // 3. Find the array in the parsed data
+        let categorizedItems: { description: string; category: string }[];
+        if (Array.isArray(parsedJson)) {
+            categorizedItems = parsedJson;
+        } else if (typeof parsedJson === 'object' && parsedJson !== null) {
+            // Find the first property that is an array
+            const arrayProperty = Object.values(parsedJson).find(value => Array.isArray(value));
+            if (arrayProperty && Array.isArray(arrayProperty)) {
+                categorizedItems = arrayProperty;
+            } else {
+                throw new Error("Odpowiedź JSON od AI nie zawiera oczekiwanej tablicy.");
+            }
+        } else {
+             throw new Error("Otrzymano nieoczekiwany format danych od AI.");
+        }
 
         const categoryMap = new Map<string, Category>();
         categorizedItems.forEach(item => {
+            // Add a check to ensure item is a valid object before destructuring
+            if (typeof item !== 'object' || item === null || typeof item.description !== 'string' || typeof item.category !== 'string') {
+                console.warn('Pominięto nieprawidłowy element w odpowiedzi od AI:', item);
+                return; // skip this item
+            }
             const validCategory = Object.values(Category).find(c => c === item.category) || Category.Other;
             categoryMap.set(item.description, validCategory);
         });
@@ -86,7 +123,7 @@ export const categorizeTransactions = async (transactions: Transaction[]): Promi
 
     } catch (error) {
         console.error("Błąd podczas kategoryzacji z Ollama:", error);
-        if (error instanceof TypeError) {
+        if (error instanceof TypeError && error.message.includes('fetch')) {
             // This often indicates a network error (CORS, server down)
             throw new Error("Nie można połączyć się z lokalnym serwerem AI. Upewnij się, że aplikacja Ollama jest uruchomiona i spróbuj ponownie załadować plik.");
         }
