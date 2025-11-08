@@ -1,0 +1,5 @@
+{
+  "name": "AI Expense Analyzer",
+  "description": "An application to automatically categorize and analyze expenses from CSV files using AI. It visualizes spending with charts and tables, and allows filtering by category.",
+  "requestFramePermissions": []
+}
